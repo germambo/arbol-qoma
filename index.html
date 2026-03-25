@@ -467,8 +467,11 @@ table.presence tr:hover td.char-name{background:var(--sur2);}
       <div class="dditem"><label for="inp-json"><span class="dic">↑</span>Importar JSON</label><input type="file" id="inp-json" accept=".json" style="display:none"></div>
       <div class="dditem"><label for="inp-ged"><span class="dic">↑</span>Importar GEDCOM</label><input type="file" id="inp-ged" accept=".ged,.gedcom" style="display:none"></div>
       <div class="ddsep"></div>
-      <button class="dditem" id="dd-popen" style="color:var(--ac)"><span class="dic">📂</span>Abrir Memoria (.qoma)</button>
-      <button class="dditem" id="dd-psave" style="color:var(--ac)"><span class="dic">💾</span>Guardar Memoria Como...</button>
+      <button class="dditem" id="dd-popen" style="color:var(--ac)"><span class="dic">📂</span>Abrir Local (.qoma)</button>
+      <button class="dditem" id="dd-psave" style="color:var(--ac)"><span class="dic">💾</span>Guardar Local Como...</button>
+      <div class="ddsep"></div>
+      <button class="dditem" id="dd-ghsave" style="color:#A8DEBC"><span class="dic">☁️</span>Guardar en GitHub</button>
+      <button class="dditem" id="dd-ghcfg" style="opacity:0.6"><span class="dic">⚙️</span>Configurar GitHub</button>
       <div class="ddsep"></div>
       <button class="dditem danger" id="dd-clr"><span class="dic">✕</span>Limpiar todo</button>
     </div>
@@ -666,6 +669,28 @@ table.presence tr:hover td.char-name{background:var(--sur2);}
       <div class="sp"></div>
       <button class="btn" id="bcan">Cancelar</button>
       <button class="btn btnp" id="bsav">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- GitHub Settings Dialog -->
+<div id="gh-dlg" style="position:fixed;inset:0;background:rgba(0,0,0,.72);display:none;align-items:center;justify-content:center;z-index:1500;backdrop-filter:blur(6px);">
+  <div class="ndbox" style="width:380px;">
+    <h2>Autenticación GitHub</h2>
+    <p style="font-size:12px;color:var(--tx2);margin-bottom:12px;line-height:1.4;">Solo se almacenan localmente en este navegador.</p>
+    
+    <label style="font-size:11px;color:var(--tx3);margin-bottom:4px;display:block;">Usuario de GitHub (ej: germanbasso)</label>
+    <input id="gh-user" type="text" placeholder="Usuario" autocomplete="off" style="margin-bottom:12px;display:block;width:100%;">
+    
+    <label style="font-size:11px;color:var(--tx3);margin-bottom:4px;display:block;">Nombre del Repositorio</label>
+    <input id="gh-repo" type="text" placeholder="Ej: arbol-qoma" autocomplete="off" style="margin-bottom:12px;display:block;width:100%;">
+    
+    <label style="font-size:11px;color:var(--tx3);margin-bottom:4px;display:block;">Personal Access Token (PAT)</label>
+    <input id="gh-token" type="password" placeholder="ghp_..." autocomplete="off" style="margin-bottom:18px;display:block;width:100%;">
+    
+    <div class="ndfoot" style="margin-top:4px;">
+      <button class="btn" id="gh-can">Cerrar</button>
+      <button class="btn btnp" id="gh-ok">Guardar Credenciales</button>
     </div>
   </div>
 </div>
@@ -3408,6 +3433,8 @@ function updateMemoryIndicator(name) {
 // BINDINGS
 $('dd-popen').addEventListener('click', () => { closeDD(); handleOpenProject(); });
 $('dd-psave').addEventListener('click', () => { closeDD(); handleSaveProjectAs(); });
+$('dd-ghsave').addEventListener('click', () => { closeDD(); handleSaveGitHub(); });
+$('dd-ghcfg').addEventListener('click', () => { closeDD(); openGHDlg(); });
 // Also trigger save when user modifies script
 if($('script-area')) {
     $('script-area').addEventListener('input', () => {
@@ -3433,6 +3460,85 @@ window.addEventListener('load', async () => {
     console.info("Error de red intentando cargar el archivo automático:", err);
   }
 });
+// GITHUB SYNC
+function openGHDlg() {
+  $('gh-user').value = localStorage.getItem('gh_user') || '';
+  $('gh-repo').value = localStorage.getItem('gh_repo') || '';
+  $('gh-token').value = localStorage.getItem('gh_token') || '';
+  $('gh-dlg').style.display = 'flex';
+}
+$('gh-can').addEventListener('click', () => { $('gh-dlg').style.display = 'none'; });
+$('gh-ok').addEventListener('click', () => {
+  localStorage.setItem('gh_user', $('gh-user').value.trim());
+  localStorage.setItem('gh_repo', $('gh-repo').value.trim());
+  localStorage.setItem('gh_token', $('gh-token').value.trim());
+  $('gh-dlg').style.display = 'none';
+  alert("Credenciales guardadas localmente.");
+});
+
+async function handleSaveGitHub() {
+  const user = localStorage.getItem('gh_user');
+  const repo = localStorage.getItem('gh_repo');
+  const token = localStorage.getItem('gh_token');
+  
+  if (!user || !repo || !token) {
+    alert("Faltan configurar las credenciales de GitHub.");
+    openGHDlg();
+    return;
+  }
+  
+  const fileName = 'Qoma 6.2.1.qoma'; 
+  const apiUrl = `https://api.github.com/repos/${user}/${repo}/contents/${encodeURIComponent(fileName)}`;
+  
+  const btn = $('dd-ghsave');
+  const oldText = btn.innerHTML;
+  btn.innerHTML = '⏳ Guardando...';
+  
+  try {
+    let sha = null;
+    const getRes = await fetch(apiUrl, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (getRes.ok) {
+      const gData = await getRes.json();
+      sha = gData.sha;
+    } else if (getRes.status !== 404) {
+      throw new Error("HTTP " + getRes.status);
+    }
+    
+    const jsonStr = await getProjectState();
+    // utf8 to base64
+    const base64Content = btoa(unescape(encodeURIComponent(jsonStr)));
+    
+    const bodyArgs = {
+      message: "Actualizando memoria vía Web",
+      content: base64Content
+    };
+    if (sha) bodyArgs.sha = sha;
+    
+    const putRes = await fetch(apiUrl, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(bodyArgs)
+    });
+    
+    if (putRes.ok) {
+      alert("¡Guardado exitosamente en GitHub!");
+    } else {
+      const errText = await putRes.text();
+      alert("Error al guardar en GitHub:\n" + errText);
+    }
+  } catch (err) {
+    console.error(err);
+    alert("Hubo un error de red intentando guardar en GitHub.");
+  } finally {
+    btn.innerHTML = oldText;
+  }
+}
 
 })();
 </script>
