@@ -3414,6 +3414,26 @@ if($('script-area')) {
         save();
     });
 }
+
+// Carga automática del archivo .qomá alojado en GitHub Pages
+window.addEventListener('load', async () => {
+  try {
+    // Reemplazá 'nombre-de-tu-archivo.qomá' por el nombre exacto de tu archivo en el repositorio
+    const urlArchivo = 'Qoma 6.2.1.qoma'; 
+    const response = await fetch(urlArchivo);
+    if (response.ok) {
+      const text = await response.text();
+      loadProjectState(text);
+      updateMemoryIndicator(urlArchivo);
+      console.log("Archivo .qomá cargado automáticamente.");
+    } else {
+      console.info("No se encontró el archivo automático .qomá (o hubo un error):", response.status);
+    }
+  } catch (err) {
+    console.info("Error de red intentando cargar el archivo automático:", err);
+  }
+});
+
 })();
 </script>
 </body>
